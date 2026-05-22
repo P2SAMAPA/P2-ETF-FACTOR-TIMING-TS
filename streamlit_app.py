@@ -24,7 +24,7 @@ st.sidebar.markdown("## ⏱️ Factor Timing")
 st.sidebar.markdown(f"**Run Date:** `{st.session_state.get('run_date', 'Not loaded')}`")
 st.sidebar.markdown(f"**Next Trading Day:** `{next_trading_day()}`")
 st.sidebar.markdown(f"**Timing model:** {config.TIMING_MODEL} | **Horizon:** {config.FORECAST_HORIZON}d")
-st.sidebar.markdown("**Windows evaluated:** 63, 252, 504, 1008, 2016 days (best per ETF)")
+st.sidebar.markdown("**Windows evaluated:** 63, 252, 504, 1008, 2016, 4032 days (best per ETF)")
 
 OUTPUT_REPO = config.OUTPUT_REPO
 HF_TOKEN = config.HF_TOKEN
