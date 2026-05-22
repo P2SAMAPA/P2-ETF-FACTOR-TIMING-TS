@@ -49,58 +49,45 @@ def main():
                 print(f"  Skipping window {win}d (insufficient data)")
                 continue
             print(f"  Processing window {win}d...")
-            # Use last `win` days
             returns_win = returns.iloc[-win:]
             macro_win = macro.iloc[-win:]
 
-            # Compute factor returns (market, value) for the window
+            # Compute factor returns (market, value)
             market_ret, value_ret = compute_factor_returns(returns_win, window=60)
             # Compute factor exposures for each ETF
             exposures = compute_factor_exposures(returns_win, window=60)
-            # The exposures DataFrame has many columns; we need to align with ETFs.
-            # For each ETF, we will have a vector of factor exposures (market_beta, value_beta, momentum, low_vol).
-            # Then we need timing probabilities for each factor (market, value, momentum, low_vol) separately.
-            # Train timing models for each factor using macro data
+            if exposures.empty:
+                continue
+
+            # Factor timing probabilities
             timing_probs = {}
-            # Market factor timing: use market_ret as the factor return
-            model_mkt, scaler_mkt = train_timing_model(macro_win, market_ret, horizon=config.FORECAST_HORIZON, model_type=config.TIMING_MODEL)
-            timing_probs['market'] = predict_timing(model_mkt, scaler_mkt, macro_win.iloc[-1].values)
-            # Value factor timing
-            model_val, scaler_val = train_timing_model(macro_win, value_ret, horizon=config.FORECAST_HORIZON, model_type=config.TIMING_MODEL)
-            timing_probs['value'] = predict_timing(model_val, scaler_val, macro_win.iloc[-1].values)
-            # For momentum and low volatility, we need factor returns: we can define momentum factor return as the cross‑sectional average of ETF momentum?
-            # For simplicity, we'll use the average of ETF momentum as factor return.
-            # We'll compute momentum factor return as the mean of ETF momentum (calculated from exposures? Actually exposures are rolling; we need a time series of factor returns.
-            # Better: compute ETF momentum as a time series (daily) and average across ETFs.
-            # Let's compute momentum factor return as equal‑weighted ETF momentum (daily).
-            # First, compute daily momentum for each ETF: 12‑month minus 1‑month return (rolling).
-            momentum_factor = pd.Series(0, index=returns_win.index)
-            lowvol_factor = pd.Series(0, index=returns_win.index)
-            for etf in tickers:
-                ret = returns_win[etf]
-                mom = ret.rolling(252).apply(lambda x: (1+x).prod() - 1, raw=False) - ret.rolling(21).apply(lambda x: (1+x).prod() - 1, raw=False)
-                momentum_factor += mom.fillna(0)
-            momentum_factor = momentum_factor / len(tickers)
-            # Low volatility factor: negative of cross‑sectional volatility rank? Not straightforward.
-            # For timing, we'll use the average ETF low volatility characteristic (which is already ETF‑specific).
-            # But we need a factor return for training. We'll use the equal‑weighted return of ETFs with low volatility (bottom 20%) minus top 20%.
-            # For simplicity, we'll skip training for low_vol and use a constant 0.5 probability.
+
+            # Market factor
+            if market_ret.std() > 0 and len(market_ret.dropna()) > 50:
+                model_mkt, scaler_mkt = train_timing_model(macro_win, market_ret, horizon=config.FORECAST_HORIZON, model_type=config.TIMING_MODEL)
+                timing_probs['market'] = predict_timing(model_mkt, scaler_mkt, macro_win.iloc[-1].values)
+            else:
+                timing_probs['market'] = 0.5
+
+            # Value factor
+            if value_ret.std() > 0 and len(value_ret.dropna()) > 50:
+                model_val, scaler_val = train_timing_model(macro_win, value_ret, horizon=config.FORECAST_HORIZON, model_type=config.TIMING_MODEL)
+                timing_probs['value'] = predict_timing(model_val, scaler_val, macro_win.iloc[-1].values)
+            else:
+                timing_probs['value'] = 0.5
+
+            # Momentum and low volatility: use default 0.5 (can be enhanced later)
             timing_probs['momentum'] = 0.5
             timing_probs['low_vol'] = 0.5
-            # If we have enough data, we can train:
-            model_mom, scaler_mom = train_timing_model(macro_win, momentum_factor, horizon=config.FORECAST_HORIZON, model_type=config.TIMING_MODEL)
-            if model_mom is not None:
-                timing_probs['momentum'] = predict_timing(model_mom, scaler_mom, macro_win.iloc[-1].values)
-            # Now compute per‑ETF composite score
-            # For each ETF, we need its current factor exposures (the last row of exposures)
+
+            # Compute per‑ETF composite score
             last_exposures = exposures.iloc[-1].to_dict()
             scores = {}
             for etf in tickers:
                 mkt_beta = last_exposures.get(f"{etf}_market_beta", 0.0)
                 val_beta = last_exposures.get(f"{etf}_value_beta", 0.0)
                 mom_char = last_exposures.get(f"{etf}_momentum", 0.0)
-                lowvol_char = last_exposures.get(f"{etf}_low_vol", 0.0)   # negative volatility
-                # Composite score = sum of factor exposure * timing probability
+                lowvol_char = last_exposures.get(f"{etf}_low_vol", 0.0)
                 score = (mkt_beta * timing_probs['market'] +
                          val_beta * timing_probs['value'] +
                          mom_char * timing_probs['momentum'] +
