@@ -52,8 +52,8 @@ def main():
             returns_win = returns.iloc[-win:]
             macro_win = macro.iloc[-win:]
 
-            # Compute factor returns (market, value)
-            market_ret, value_ret = compute_factor_returns(returns_win, window=60)
+            # Compute factor returns (market, value) – no window argument needed
+            market_ret, value_ret = compute_factor_returns(returns_win)
             # Compute factor exposures for each ETF
             exposures = compute_factor_exposures(returns_win, window=60)
             if exposures.empty or exposures.isnull().all().all():
@@ -90,14 +90,14 @@ def main():
                 mom_char = last_exposures.get(f"{etf}_momentum", 0.0)
                 lowvol_char = last_exposures.get(f"{etf}_low_vol", 0.0)
                 # Replace NaN with 0
-                for v in [mkt_beta, val_beta, mom_char, lowvol_char]:
-                    if np.isnan(v):
-                        v = 0.0
+                if np.isnan(mkt_beta): mkt_beta = 0.0
+                if np.isnan(val_beta): val_beta = 0.0
+                if np.isnan(mom_char): mom_char = 0.0
+                if np.isnan(lowvol_char): lowvol_char = 0.0
                 score = (mkt_beta * timing_probs['market'] +
                          val_beta * timing_probs['value'] +
                          mom_char * timing_probs['momentum'] +
                          lowvol_char * timing_probs['low_vol'])
-                # If all contributions are zero, use a small positive to avoid NaN ranking issues
                 if np.isnan(score) or score == 0.0:
                     score = 1e-6
                 scores[etf] = score
