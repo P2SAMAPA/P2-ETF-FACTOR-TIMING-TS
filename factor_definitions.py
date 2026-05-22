@@ -2,48 +2,39 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 
-def compute_factor_returns(returns_df, window=60):
+def compute_factor_returns(returns_df):
     """
-    Compute daily factor returns for:
-        - Market: equal‑weighted mean of all ETFs (or SPY if available)
-        - Value: IWD - IWF (if available) else zero
-        - Momentum: 12‑month minus 1‑month return of the ETF? Not a factor return.
-        We'll skip momentum factor for exposures; use only market and value.
-        For low volatility, we use the negative of the ETF's own volatility as an ETF‑specific characteristic.
+    Compute daily factor returns for market and value.
+    Market: equal‑weighted mean of all ETFs (or SPY if available)
+    Value: IWD - IWF (if available) else zero
     """
-    # Market
     if 'SPY' in returns_df.columns:
         market_ret = returns_df['SPY']
     else:
         market_ret = returns_df.mean(axis=1)
-    # Value
     if 'IWD' in returns_df.columns and 'IWF' in returns_df.columns:
         value_ret = returns_df['IWD'] - returns_df['IWF']
     else:
         value_ret = pd.Series(0, index=returns_df.index)
-    # Low volatility factor: we won't use a factor return; we'll use ETF‑specific volatility as a characteristic.
-    # For exposures, we'll compute rolling betas.
     return market_ret, value_ret
 
 def compute_factor_exposures(returns_df, window=60):
     """
     For each ETF, compute rolling exposures to market and value factors.
-    Also compute ETF‑specific characteristics: momentum (12‑1m), low vol (negative vol rank).
-    Returns a DataFrame with columns: market_beta, value_beta, momentum, low_vol.
+    Also compute ETF‑specific characteristics: momentum (12‑1m) and low volatility (negative vol).
+    Returns DataFrame with columns: ETF_market_beta, ETF_value_beta, ETF_momentum, ETF_low_vol.
     """
-    market_ret, value_ret = compute_factor_returns(returns_df, window)
+    market_ret, value_ret = compute_factor_returns(returns_df)
     etfs = returns_df.columns
     n = len(returns_df)
     exposures = pd.DataFrame(index=returns_df.index)
     for etf in etfs:
         ret = returns_df[etf]
-        # Rolling betas
-        market_beta = np.zeros(n)
-        value_beta = np.zeros(n)
+        market_beta = np.full(n, np.nan)
+        value_beta = np.full(n, np.nan)
         for i in range(window, n):
             X = np.column_stack([market_ret.iloc[i-window:i], value_ret.iloc[i-window:i]])
             y = ret.iloc[i-window:i].values
-            # Remove NaN
             valid = ~np.isnan(y) & ~np.isnan(X).any(axis=1)
             if valid.sum() < 10:
                 continue
@@ -65,4 +56,6 @@ def compute_factor_exposures(returns_df, window=60):
         exposures[f"{etf}_value_beta"] = value_beta
         exposures[f"{etf}_momentum"] = mom
         exposures[f"{etf}_low_vol"] = low_vol
+    # Fill NaN forward (so that the last row has values)
+    exposures = exposures.fillna(method='ffill')
     return exposures
