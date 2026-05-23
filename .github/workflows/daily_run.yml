@@ -2,7 +2,7 @@ name: Daily Factor Timing Run
 
 on:
   schedule:
-    - cron: '20 01 * * 1-5'
+    - cron: '20 01 * * 1-6'
   workflow_dispatch:
 
 jobs:
